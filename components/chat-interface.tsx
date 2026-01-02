@@ -1,0 +1,353 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Mic, MicOff, Send, LogOut, Volume2 } from "lucide-react";
+import { toast } from "sonner";
+import { useConversation } from "@11labs/react";
+import { API_URL } from "@/lib/config";
+
+interface Message {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+}
+
+interface User {
+    id: string;
+    name?: string | null;
+    email: string;
+}
+
+interface ChatInterfaceProps {
+    user: User;
+    onLogout: () => void;
+}
+
+export default function ChatInterface({ user, onLogout }: ChatInterfaceProps) {
+    const [messages, setMessages] = useState<Message[]>([
+        {
+            id: "welcome",
+            role: "assistant",
+            content: `Hi! 👋 I'm your food tracking assistant. Tell me what you've eaten today - just say something like "I had oatmeal with berries for breakfast" or "Just finished lunch - had a chicken salad". You can type or use the microphone to speak!`
+        }
+    ]);
+    const [input, setInput] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // ElevenLabs Conversation hook
+    const conversation = useConversation({
+        onConnect: () => {
+            console.log("Connected to ElevenLabs");
+            toast.success("Voice assistant connected!");
+        },
+        onDisconnect: () => {
+            console.log("Disconnected from ElevenLabs");
+        },
+        onMessage: (message: { message?: string }) => {
+            console.log("Message from ElevenLabs:", message);
+            // Handle incoming messages from the AI
+            if (message.message) {
+                const assistantMessage: Message = {
+                    id: Date.now().toString(),
+                    role: "assistant",
+                    content: message.message
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+            }
+        },
+        onError: (error: string | Error) => {
+            console.error("ElevenLabs error:", error);
+            toast.error("Voice connection error");
+        },
+    });
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const handleSend = async () => {
+        if (!input.trim() || isLoading) return;
+
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            role: "user",
+            content: input.trim()
+        };
+
+        setMessages(prev => [...prev, userMessage]);
+        const userInput = input.trim();
+        setInput("");
+        setIsLoading(true);
+
+        try {
+            // Process with simple logic if not using voice
+            const response = await processUserInput(userInput, user.id);
+
+            const assistantMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                content: response
+            };
+
+            setMessages(prev => [...prev, assistantMessage]);
+
+            // Speak the response
+            await speakText(response);
+        } catch (error) {
+            toast.error("Failed to process your message");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const processUserInput = async (text: string, userId: string): Promise<string> => {
+        const lowerText = text.toLowerCase();
+
+        let mealType: string | null = null;
+        if (lowerText.includes("breakfast") || lowerText.includes("morning")) {
+            mealType = "breakfast";
+        } else if (lowerText.includes("lunch") || lowerText.includes("noon") || lowerText.includes("midday")) {
+            mealType = "lunch";
+        } else if (lowerText.includes("dinner") || lowerText.includes("evening") || lowerText.includes("night")) {
+            mealType = "dinner";
+        } else if (lowerText.includes("snack")) {
+            mealType = "snack";
+        }
+
+        if (!mealType) {
+            return "I'd love to log that for you! Was this for breakfast, lunch, dinner, or a snack? 🍽️";
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/api/food-logs`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId,
+                    mealType,
+                    foodItems: [text],
+                    notes: null
+                })
+            });
+
+            if (response.ok) {
+                const mealEmojis: Record<string, string> = {
+                    breakfast: "🌅",
+                    lunch: "☀️",
+                    dinner: "🌙",
+                    snack: "🍿"
+                };
+                return `Got it! I've logged your ${mealType} ${mealEmojis[mealType]}. Keep tracking to understand how food affects how you feel!`;
+            }
+        } catch (error) {
+            console.error("Failed to save food log:", error);
+        }
+
+        return "I've noted that down for you! 💪";
+    };
+
+    const speakText = async (text: string) => {
+        try {
+            setIsSpeaking(true);
+            const response = await fetch(`${API_URL}/api/elevenlabs/tts`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text })
+            });
+
+            if (response.ok) {
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                if (audioRef.current) {
+                    audioRef.current.src = audioUrl;
+                    audioRef.current.play();
+                    audioRef.current.onended = () => {
+                        setIsSpeaking(false);
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                }
+            }
+        } catch (error) {
+            console.error("TTS error:", error);
+            setIsSpeaking(false);
+        }
+    };
+
+    const startVoiceConversation = async () => {
+        try {
+            // Get signed URL from backend with user ID
+            const response = await fetch(`${API_URL}/api/elevenlabs/signed-url`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user.id })
+            });
+
+            if (response.ok) {
+                const { signedUrl } = await response.json();
+                await conversation.startSession({
+                    signedUrl,
+                    dynamicVariables: {
+                        user_id: user.id,
+                    }
+                });
+            } else {
+                // Fallback to Web Speech API
+                startWebSpeechRecognition();
+            }
+        } catch (error) {
+            console.error("Failed to start voice:", error);
+            // Fallback to Web Speech API
+            startWebSpeechRecognition();
+        }
+    };
+
+    const startWebSpeechRecognition = () => {
+        if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+            toast.error("Speech recognition not supported in this browser");
+            return;
+        }
+
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setInput(transcript);
+            toast.success("Got it! Press send or edit your message.");
+        };
+
+        recognition.onerror = (event: any) => {
+            console.error("Speech recognition error:", event.error);
+            toast.error("Could not understand. Please try again.");
+        };
+
+        recognition.start();
+        toast.info("Listening... Speak now!");
+    };
+
+    const stopVoiceConversation = async () => {
+        await conversation.endSession();
+    };
+
+    const handleLogout = () => {
+        onLogout();
+    };
+
+    const isVoiceActive = conversation.status === "connected";
+
+    return (
+        <div className="flex flex-col h-screen bg-zinc-900">
+            {/* Hidden audio element for TTS playback */}
+            <audio ref={audioRef} className="hidden" />
+
+            {/* Header */}
+            <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-linear-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white font-bold">
+                        {user.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <h1 className="text-white font-semibold">Food Track</h1>
+                        <p className="text-zinc-400 text-sm">{user.email}</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {isSpeaking && (
+                        <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                            <Volume2 className="h-4 w-4 animate-pulse" />
+                            Speaking...
+                        </div>
+                    )}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleLogout}
+                        className="text-zinc-400 hover:text-white hover:bg-zinc-800"
+                    >
+                        <LogOut className="h-5 w-5" />
+                    </Button>
+                </div>
+            </header>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-6">
+                <div className="max-w-3xl mx-auto space-y-6">
+                    {messages.map((message) => (
+                        <div
+                            key={message.id}
+                            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                        >
+                            <div
+                                className={`max-w-[80%] rounded-2xl px-4 py-3 ${message.role === "user"
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-zinc-800 text-zinc-100"
+                                    }`}
+                            >
+                                {message.content}
+                            </div>
+                        </div>
+                    ))}
+                    {isLoading && (
+                        <div className="flex justify-start">
+                            <div className="bg-zinc-800 rounded-2xl px-4 py-3 text-zinc-400">
+                                <span className="animate-pulse">Thinking...</span>
+                            </div>
+                        </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+            </div>
+
+            {/* Input Area */}
+            <div className="border-t border-zinc-800 px-4 py-4">
+                <div className="max-w-3xl mx-auto flex items-center gap-3">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={isVoiceActive ? stopVoiceConversation : startVoiceConversation}
+                        className={`rounded-full ${isVoiceActive
+                            ? "bg-red-600 text-white hover:bg-red-700 animate-pulse"
+                            : "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700"
+                            }`}
+                    >
+                        {isVoiceActive ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                    </Button>
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                        placeholder={isVoiceActive ? "Listening..." : "Tell me what you ate..."}
+                        className="flex-1 bg-zinc-800 text-white rounded-full px-5 py-3 outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-zinc-500"
+                        disabled={isLoading || isVoiceActive}
+                    />
+                    <Button
+                        onClick={handleSend}
+                        disabled={!input.trim() || isLoading || isVoiceActive}
+                        className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-6"
+                    >
+                        <Send className="h-5 w-5" />
+                    </Button>
+                </div>
+                {isVoiceActive && (
+                    <p className="text-center text-zinc-500 text-sm mt-2">
+                        Voice conversation active. Speak naturally!
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
