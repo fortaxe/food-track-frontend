@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, UtensilsCrossed, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { MessageCircle, UtensilsCrossed, ChevronLeft, ChevronRight, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -13,7 +13,25 @@ interface SidebarProps {
 
 export default function Sidebar({ onLogout, userName }: SidebarProps) {
     const [isExpanded, setIsExpanded] = useState(true);
+    const [isMobileOpen, setIsMobileOpen] = useState(false);
     const pathname = usePathname();
+
+    // Close mobile menu when route changes
+    useEffect(() => {
+        setIsMobileOpen(false);
+    }, [pathname]);
+
+    // Prevent body scroll when mobile menu is open
+    useEffect(() => {
+        if (isMobileOpen) {
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = "";
+        }
+        return () => {
+            document.body.style.overflow = "";
+        };
+    }, [isMobileOpen]);
 
     const navItems = [
         {
@@ -28,24 +46,28 @@ export default function Sidebar({ onLogout, userName }: SidebarProps) {
         },
     ];
 
-    return (
-        <aside
-            className={cn(
-                "flex flex-col h-screen bg-zinc-900 border-r border-zinc-800 transition-all duration-300",
-                isExpanded ? "w-64" : "w-16"
-            )}
-        >
+    const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+        <>
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-                {isExpanded && (
+                {(isExpanded || isMobile) && (
                     <h1 className="text-lg font-bold text-white">🍽️ Food Track</h1>
                 )}
-                <button
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                >
-                    {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-                </button>
+                {isMobile ? (
+                    <button
+                        onClick={() => setIsMobileOpen(false)}
+                        className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                    >
+                        {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+                    </button>
+                )}
             </div>
 
             {/* Navigation */}
@@ -64,7 +86,7 @@ export default function Sidebar({ onLogout, userName }: SidebarProps) {
                             )}
                         >
                             <item.icon size={20} />
-                            {isExpanded && <span>{item.label}</span>}
+                            {(isExpanded || isMobile) && <span>{item.label}</span>}
                         </Link>
                     );
                 })}
@@ -72,7 +94,7 @@ export default function Sidebar({ onLogout, userName }: SidebarProps) {
 
             {/* Footer */}
             <div className="p-4 border-t border-zinc-800">
-                {isExpanded && userName && (
+                {(isExpanded || isMobile) && userName && (
                     <div className="mb-3 text-sm text-zinc-400 truncate">
                         👋 {userName}
                     </div>
@@ -81,13 +103,54 @@ export default function Sidebar({ onLogout, userName }: SidebarProps) {
                     onClick={onLogout}
                     className={cn(
                         "flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors w-full",
-                        !isExpanded && "justify-center"
+                        !isExpanded && !isMobile && "justify-center"
                     )}
                 >
                     <LogOut size={20} />
-                    {isExpanded && <span>Logout</span>}
+                    {(isExpanded || isMobile) && <span>Logout</span>}
                 </button>
             </div>
-        </aside>
+        </>
+    );
+
+    return (
+        <>
+            {/* Mobile Menu Button - Fixed in top right */}
+            <button
+                onClick={() => setIsMobileOpen(true)}
+                className="md:hidden fixed top-4 right-4 z-40 p-2 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-colors shadow-lg"
+                aria-label="Open menu"
+            >
+                <Menu size={24} />
+            </button>
+
+            {/* Mobile Overlay */}
+            {isMobileOpen && (
+                <div
+                    className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+                    onClick={() => setIsMobileOpen(false)}
+                />
+            )}
+
+            {/* Mobile Sidebar */}
+            <aside
+                className={cn(
+                    "md:hidden fixed top-0 right-0 h-screen w-72 bg-zinc-900 border-l border-zinc-800 z-50 flex flex-col transition-transform duration-300 ease-in-out",
+                    isMobileOpen ? "translate-x-0" : "translate-x-full"
+                )}
+            >
+                <SidebarContent isMobile={true} />
+            </aside>
+
+            {/* Desktop Sidebar */}
+            <aside
+                className={cn(
+                    "hidden md:flex flex-col h-screen bg-zinc-900 border-r border-zinc-800 transition-all duration-300",
+                    isExpanded ? "w-64" : "w-16"
+                )}
+            >
+                <SidebarContent isMobile={false} />
+            </aside>
+        </>
     );
 }
