@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import SignIn from "@/components/sign-in";
 import ChatInterface from "@/components/chat-interface";
+import Sidebar from "@/components/sidebar";
 
 interface User {
   id: string;
@@ -43,7 +44,7 @@ export default function Home() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-900">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
         <div className="animate-pulse text-white">Loading...</div>
       </div>
     );
@@ -51,7 +52,7 @@ export default function Home() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-900">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
         <div className="flex flex-col gap-4 items-center">
           <h1 className="text-2xl font-bold text-white">Welcome to Food Track</h1>
           <p className="text-zinc-400 text-center max-w-md">
@@ -63,5 +64,12 @@ export default function Home() {
     );
   }
 
-  return <ChatInterface user={user} onLogout={handleLogout} />;
+  return (
+    <div className="flex min-h-screen bg-zinc-950">
+      <Sidebar onLogout={handleLogout} userName={user.name || user.email} />
+      <main className="flex-1">
+        <ChatInterface user={user} onLogout={handleLogout} />
+      </main>
+    </div>
+  );
 }

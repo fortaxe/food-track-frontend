@@ -129,7 +129,10 @@ export default function ChatInterface({ user, onLogout }: ChatInterfaceProps) {
         try {
             const response = await fetch(`${API_URL}/api/food-logs`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "true",
+                },
                 body: JSON.stringify({
                     userId,
                     mealType,
@@ -159,7 +162,10 @@ export default function ChatInterface({ user, onLogout }: ChatInterfaceProps) {
             setIsSpeaking(true);
             const response = await fetch(`${API_URL}/api/elevenlabs/tts`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "true",
+                },
                 body: JSON.stringify({ text })
             });
 
@@ -187,7 +193,10 @@ export default function ChatInterface({ user, onLogout }: ChatInterfaceProps) {
             // Get signed URL from backend with user ID
             const response = await fetch(`${API_URL}/api/elevenlabs/signed-url`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "true",
+                },
                 body: JSON.stringify({ userId: user.id })
             });
 
